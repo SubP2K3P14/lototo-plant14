@@ -1,0 +1,13 @@
+Digital LOTOTO Register - Plant 14 (paket web untuk hosting)
+
+1. Buka index.html dengan Notepad, isi SUPABASE_URL dan SUPABASE_ANON_KEY
+   di bagian PENGATURAN SUPABASE, lalu simpan.
+2. Unggah SEMUA file di folder ini (bukan hanya index.html) ke GitHub Pages,
+   Netlify, atau server internal yang memakai HTTPS.
+3. Buka alamatnya di ponsel, lalu pasang ke layar utama:
+   - Android (Chrome): tombol "Pasang aplikasi" di atas, atau menu titik tiga > Instal aplikasi.
+   - iPhone (Safari): tombol Bagikan > Tambahkan ke Layar Utama.
+
+Saat memperbarui aplikasi: unggah index.html yang baru, lalu naikkan angka
+VERSI di sw.js (misalnya lototo-v1 menjadi lototo-v2) supaya ponsel
+mengambil versi terbaru.

@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Digital LOTOTO Register</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1C2326">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LOTOTO P14">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- =================== PENGATURAN SUPABASE ===================
      Isi dua nilai di bawah dengan Project URL dan anon public key
      dari Supabase: Project Settings > API. Jangan isi service_role key. -->
@@ -330,6 +338,7 @@ body.auth main,body.auth nav,body.auth .who{display:none !important}
 body:not(.auth) .login{display:none}
 .login h2{font-size:32px;margin-bottom:4px}
 input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 11px}
+.installbtn{background:#E8681D;color:#fff;border:0;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:var(--cond);font-weight:700;font-size:16px}
 .who{display:flex;align-items:center;gap:8px;font-size:13px}
 .who span{opacity:.85}
 .who button{background:rgba(255,255,255,.14);border:0;color:inherit;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px}
@@ -355,6 +364,7 @@ input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line
       <button data-nav="riwayat">Riwayat</button>
       <button data-nav="peralatan">Peralatan</button>
     </nav>
+    <button type="button" class="installbtn" id="installBtn" hidden>Pasang aplikasi</button>
     <div class="who" id="who" hidden><span id="whoName"></span><button type="button" id="logoutBtn">Keluar</button></div>
   </div>
 </header>
@@ -626,7 +636,7 @@ function fromRow(r){
   return {id: r.id, nomor: r.nomor, status: r.status, leader: r.leader, anggota: r.anggota || [], departemen: r.departemen,
     lokasi: r.lokasi || "", peralatan: r.peralatan, kodePeralatan: r.kode_peralatan || "", pekerjaan: r.pekerjaan,
     energi: r.energi || [], titikIsolasi: r.titik_isolasi || "", tryOut: !!r.try_out, mulai: iso(r.mulai), selesai: iso(r.selesai),
-    bukti: r.bukti || {}, penutupan: r.penutupan || null, log: r.log || [], dibuatOleh: r.dibuat_oleh || null};
+    bukti: r.bukti || {}, penutupan: r.penutupan || null, log: r.log || [], dibuatOleh: r.dibuat_oleh || null, dibuatOlehNama: r.dibuat_oleh_nama || ""};
 }
 function eqFromRow(r){ return {id: r.id, kode: r.kode, nama: r.nama, area: r.area || "", dibuat: r.dibuat, diubah: r.diubah}; }
 function sbErr(e){
@@ -638,6 +648,11 @@ function sbErr(e){
   if (/fetch|network/i.test(m)) return new Error("Tidak bisa terhubung ke server. Periksa koneksi internet lalu coba lagi.");
   return new Error("Gagal menyimpan: " + m);
 }
+/* Hanya akun yang memulai LOTOTO yang boleh menutupnya; admin boleh sebagai pengecualian */
+const isAdmin = () => !!(S.me && S.me.peran === "admin");
+const isOwner = r => S.mode !== "sb" || (!!r.dibuatOleh && r.dibuatOleh === S.uid);
+const canClose = r => S.canWrite && r.status === "aktif" && (isOwner(r) || isAdmin());
+const ownerLabel = r => r.dibuatOlehNama || r.leader;
 function upsertLocal(key, rec){
   const arr = S[key]; const i = arr.findIndex(x => x.id === rec.id);
   if (i >= 0) arr[i] = rec; else arr.push(rec);
@@ -779,7 +794,7 @@ function renderDashboard(){
         '<div class="field"><small>Pekerjaan</small><div>' + esc(r.pekerjaan) + '</div></div>' +
         '<div class="since"><span class="tag-code">Sejak ' + esc(fmt(r.mulai)) + '</span><strong data-since="' + esc(r.mulai) + '">' + esc(recDur(r)) + '</strong></div>' +
         (long ? '<span class="long">Terkunci lebih dari 24 jam</span>' : '') +
-        '<button class="tag-btn" data-open="' + esc(r.id) + '">' + (S.canWrite ? 'Lihat detail dan tutup' : 'Lihat detail') + '</button>' +
+        '<button class="tag-btn" data-open="' + esc(r.id) + '">' + (canClose(r) ? 'Lihat detail dan tutup' : 'Lihat detail') + '</button>' +
       '</div></article>';
   }).join("");
 
@@ -852,6 +867,7 @@ function renderDetail(){
     (r.energi && r.energi.length ? '<div><dt>Sumber energi diisolasi</dt><dd>' + esc(r.energi.join(", ")) + '</dd></div>' : '') +
     (r.titikIsolasi ? '<div><dt>Titik isolasi</dt><dd>' + esc(r.titikIsolasi) + '</dd></div>' : '') +
     '<div><dt>Try out</dt><dd>' + (r.tryOut ? "Sudah dilakukan" : "Tidak dicatat") + '</dd></div>' +
+    (r.dibuatOlehNama ? '<div><dt>Dicatat oleh akun</dt><dd>' + esc(r.dibuatOlehNama) + '</dd></div>' : '') +
     '</dl>';
   h += '<div class="sec"><h3>Bukti sebelum bekerja</h3>' +
     '<div class="ev-group"><div>Permit to Work (PTW)</div>' + thumbsHTML(b.ptw) + '</div>' +
@@ -867,15 +883,21 @@ function renderDetail(){
   h += '<div class="sec"><h3>Jejak aktivitas</h3><ul class="log">' + (r.log || []).map(l =>
     '<li class="' + (l.aksi === "Dimulai" ? "start" : l.aksi === "Ditutup" ? "end" : "") + '"><b>' + esc(l.aksi) + '</b> oleh ' + esc(l.oleh) + '<br><span class="muted">' + esc(fmt(l.waktu)) + '</span>' + (l.ket ? '<br>' + esc(l.ket) : '') + '</li>').join("") + '</ul></div>';
 
-  if (active && S.canWrite) {
-    h += '<form class="close-form" id="closeForm" novalidate><h3>Tutup LOTOTO</h3><p class="hint">Isi setelah pekerjaan selesai, semua gembok dilepas, dan peralatan siap dijalankan.</p>';
+  if (active && S.canWrite && !canClose(r)) {
+    h += '<div class="close-form"><h3>Tutup LOTOTO</h3><div class="notice">Hanya akun yang memulai LOTOTO ini, yaitu <b>' + esc(ownerLabel(r)) + '</b>, yang bisa menutupnya. Kalau orang tersebut tidak ada di tempat, hubungi admin aplikasi.</div></div>';
+  }
+  if (active && canClose(r)) {
+    const override = !isOwner(r);
+    h += '<form class="close-form" id="closeForm" novalidate' + (override ? ' data-override="1"' : '') + '><h3>Tutup LOTOTO</h3><p class="hint">Isi setelah pekerjaan selesai, semua gembok dilepas, dan peralatan siap dijalankan.</p>';
+    if (override) h += '<div class="notice">LOTOTO ini dimulai oleh <b>' + esc(ownerLabel(r)) + '</b>. Sebagai admin Anda bisa menutupnya sebagai pengecualian, tetapi alasan wajib ditulis di kolom Catatan dan akan tercatat di riwayat.</div>';
     if (!S.canUpload) h += '<div class="notice">Anda tidak punya izin mengunggah bukti, jadi belum bisa menutup LOTOTO. Minta pemilik aplikasi memberi akses Contributor.</div>';
     h += '<label class="lbl" for="cBy">Ditutup oleh <span class="req">*</span></label><input type="text" id="cBy" list="dlPeople" value="' + esc(r.leader) + '">' +
       '<label class="lbl">Foto gembok dan tag sudah dilepas <span class="req">*</span></label>' +
       '<div class="drop" data-drop="close:lepas"><div class="drop-row"><button type="button" class="btn ghost" data-pick="close:lepas">Pilih file</button><span class="hint">atau tarik file ke sini</span></div><div class="thumbs" data-thumbs="close:lepas"></div></div>' +
       '<label class="lbl">Foto peralatan siap operasi <span class="req">*</span></label>' +
       '<div class="drop" data-drop="close:ready"><div class="drop-row"><button type="button" class="btn ghost" data-pick="close:ready">Pilih file</button><span class="hint">atau tarik file ke sini</span></div><div class="thumbs" data-thumbs="close:ready"></div></div>' +
-      '<label class="lbl" for="cNote">Catatan</label><textarea id="cNote" placeholder="Contoh: Bearing diganti, guard sudah terpasang kembali, area bersih"></textarea>' +
+      (override ? '<label class="lbl" for="cNote">Alasan penutupan oleh admin <span class="req">*</span></label><textarea id="cNote" placeholder="Contoh: Pemilik gembok cuti, gembok dilepas bersama supervisor setelah pengecekan lapangan"></textarea>'
+        : '<label class="lbl" for="cNote">Catatan</label><textarea id="cNote" placeholder="Contoh: Bearing diganti, guard sudah terpasang kembali, area bersih"></textarea>') +
       '<div class="confirm ok"><label class="check"><input type="checkbox" id="cSafe"><span>Semua anggota sudah melepas gembok masing-masing, guard terpasang, dan area aman untuk start. <span class="req">*</span></span></label></div>' +
       '<div class="submit-bar"><button type="submit" class="btn green" id="closeSubmit"' + (S.canUpload ? '' : ' disabled') + '>Tutup LOTOTO</button><span class="progress" id="closeProgress" aria-live="polite"></span></div>' +
       '<div class="err" id="closeErr" role="alert"></div></form>';
@@ -949,7 +971,7 @@ function renderSessionDetail(){
         '<div><div>Gembok terpasang</div>' + thumbsHTML(b.loto) + '</div>' +
         (p ? '<div><div>Gembok dilepas</div>' + thumbsHTML(p.buktiLepas) + '</div><div><div>Peralatan siap</div>' + thumbsHTML(p.buktiReady) + '</div>' : '') +
       '</div>' +
-      '<div style="margin-top:12px"><button type="button" class="btn ' + (on && S.canWrite ? "blue" : "ghost") + '" style="font-size:16px;padding:6px 14px" data-open="' + esc(r.id) + '">' + (on && S.canWrite ? "Buka untuk menutup" : "Buka LOTOTO ini") + '</button></div>' +
+      '<div style="margin-top:12px"><button type="button" class="btn ' + (canClose(r) ? "blue" : "ghost") + '" style="font-size:16px;padding:6px 14px" data-open="' + esc(r.id) + '">' + (canClose(r) ? "Buka untuk menutup" : "Buka LOTOTO ini") + '</button></div>' +
     '</div></details>';
   }).join("") + '</div></div>';
   box.innerHTML = h;
@@ -1180,8 +1202,8 @@ function sessionCard(s){
       '<span class="lr-t">' + (on ? "Pasang " + esc(hhmm(r.mulai)) : "Lepas " + esc(hhmm(r.selesai))) + '</span>' +
       '<span class="' + (on ? "ic-lock" : "ic-ok") + '" aria-label="' + (on ? "Aktif" : "Close") + '">' + (on ? IC.lock : IC.check) + '</span></button>';
   }).join("");
-  const btn = '<div class="sc-btns"><button type="button" class="btn ghost" data-ses-open="' + esc(recs[0].id) + '">Lihat detail</button>' + (firstActive && S.canWrite
-    ? '<button type="button" class="btn blue" data-open="' + esc(target.id) + '">Tutup LOTOTO</button>' : '') + '</div>';
+  const btn = '<div class="sc-btns"><button type="button" class="btn ghost" data-ses-open="' + esc(recs[0].id) + '">Lihat detail</button>' + (recs.some(canClose)
+    ? '<button type="button" class="btn blue" data-open="' + esc((recs.find(r => canClose(r) && isOwner(r)) || recs.find(canClose)).id) + '">Tutup LOTOTO</button>' : '') + '</div>';
   return '<article class="sc st-' + s.st + '">' +
     '<div class="sc-band"><span>' + IC[ST[s.st].icon] + esc(ST[s.st].label) + '</span><span title="' + esc(fmtShort(s.mulai)) + '">' + esc(ago(s.mulai)) + '</span></div>' +
     '<div class="sc-body">' +
@@ -1299,6 +1321,8 @@ async function submitClose(e){
   if (!S.pending["close:lepas"].length) missing.push("foto gembok dilepas");
   if (!S.pending["close:ready"].length) missing.push("foto peralatan siap");
   if (!$("#cSafe").checked) missing.push("konfirmasi area aman");
+  const override = !!$("#closeForm").dataset.override;
+  if (override && !$("#cNote").value.trim()) missing.push("alasan penutupan oleh admin");
   if (missing.length) { err.textContent = "Lengkapi dulu: " + missing.join(", ") + "."; return; }
 
   S.busy = true; const btn = $("#closeSubmit"); btn.disabled = true; const prog = $("#closeProgress");
@@ -1312,7 +1336,7 @@ async function submitClose(e){
     await updateRecord(id, {
       status: "selesai", selesai: now,
       penutupan: {oleh: by, waktu: now, catatan: note, buktiLepas: up["close:lepas"], buktiReady: up["close:ready"]},
-      log: (fresh.log || []).concat([{waktu: now, aksi: "Ditutup", oleh: by, ket: "Gembok departemen ini sudah dilepas"}])
+      log: (fresh.log || []).concat([{waktu: now, aksi: "Ditutup", oleh: by, ket: override ? "Ditutup admin sebagai pengecualian. Alasan: " + note : "Gembok departemen ini sudah dilepas"}])
     });
     clearPending("close:lepas"); clearPending("close:ready");
     const sameKey = x => (low(x.kodePeralatan) || low(x.peralatan)) === (low(fresh.kodePeralatan) || low(fresh.peralatan));
@@ -1459,7 +1483,7 @@ async function init(){
   const cfg = window.LOTOTO_CONFIG || {};
   const ready = cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && !/ISI-/.test(cfg.SUPABASE_URL + cfg.SUPABASE_ANON_KEY);
   if (!ready) { startLocal("Supabase belum diatur. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di bagian atas file ini. Sementara ini aplikasi berjalan dalam mode lokal: data hanya tersimpan di browser ini."); return; }
-  if (!window.supabase || !window.supabase.createClient) { startLocal("Pustaka Supabase gagal dimuat. Periksa koneksi internet lalu muat ulang halaman."); return; }
+  if (!window.supabase || !window.supabase.createClient) { showLogin("Aplikasi belum bisa terhubung. Periksa koneksi internet lalu buka ulang aplikasi."); $("#lBtn").disabled = true; return; }
   S.sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
   S.sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT" && S.mode === "sb") location.reload(); });
   $("#loginForm").addEventListener("submit", doLogin);
@@ -1534,6 +1558,20 @@ function subscribeLive(){
     });
 }
 init();
+
+/* ---------- Pasang sebagai aplikasi (PWA) ---------- */
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; $("#installBtn").hidden = false; });
+window.addEventListener("appinstalled", () => { installPrompt = null; $("#installBtn").hidden = true; toast("Aplikasi terpasang di layar utama"); });
+$("#installBtn").addEventListener("click", async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  try { await installPrompt.userChoice; } catch (e) {}
+  installPrompt = null; $("#installBtn").hidden = true;
+});
 })();
 </script>
 </body>
